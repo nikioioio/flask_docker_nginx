@@ -12,6 +12,7 @@ def hello_world():
 
 @app.route('/get_val',methods = ['POST'])
 def post_r():
+    print(request.headers)
     a = request.files['test']
     # доп параметры request
     # b = request.form
@@ -20,15 +21,18 @@ def post_r():
     return json.dumps({'status':200})
     # return request.args
 
-# # Функция  разрешающая запросы с js другого ресурса (комментировать когда запросы с postman
-# @app.after_request
-# def after_request(response):
-#     white_origin= ['http://127.0.0.1:8000','http://127.0.0.1:5000']
-#     if request.headers['Origin'] in white_origin:
-#         response.headers['Access-Control-Allow-Origin'] = request.headers['Origin']
-#         response.headers['Access-Control-Allow-Methods'] = 'PUT,GET,POST,DELETE'
-#         response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-#     return response
+# Функция  разрешающая запросы с js другого ресурса (комментировать когда запросы с postman
+@app.after_request
+def after_request(response):
+    white_origin= ['http://127.0.0.1:8000','http://127.0.0.1:5000']
+    try:
+        if request.headers['Origin'] in white_origin:
+            response.headers['Access-Control-Allow-Origin'] = request.headers['Origin']
+            response.headers['Access-Control-Allow-Methods'] = 'PUT,GET,POST,DELETE'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    except KeyError:
+        pass
+    return response
 
 
 
