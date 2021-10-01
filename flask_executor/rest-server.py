@@ -1,6 +1,7 @@
 #!flask/bin/python
 from flask import Flask, jsonify, abort, request, make_response, url_for
 from flask_httpauth import HTTPBasicAuth
+from flask_accept import accept
 
 app = Flask(__name__, static_url_path="")
 auth = HTTPBasicAuth()
@@ -62,6 +63,7 @@ curl -u nikita:kedrun -i -H -X GET  http://localhost:5000/api/margin/production
 
 
 @app.route('/api/margin/production', methods=['GET'])
+@accept('application/json')
 @auth.login_required
 def get_tasks():
     return jsonify({'tasks': make_public_task(tasks)})
@@ -75,6 +77,7 @@ curl -u nikita:kedrun -i -H -X GET  http://localhost:5000/api/margin/production/
 
 
 @app.route('/api/margin/production/<int:task_id>/', methods=['GET'])
+@accept('application/json')
 @auth.login_required
 def get_task(task_id):
     task = list(filter(lambda t: t['id'] == task_id, tasks))
@@ -91,6 +94,7 @@ curl -u nikita:kedrun -i -H "Content-Type: application/json" -X POST -d '....' h
 
 
 @app.route('/api/margin/production', methods=['POST'])
+@accept('application/json')
 @auth.login_required
 def create_task():
     if not request.json or not 'title' in request.json:
@@ -113,6 +117,7 @@ curl -u nikita:kedrun -i -H "Content-Type: application/json" -X PUT -d '....' ht
 
 
 @app.route('/api/margin/production/<int:task_id>', methods=['PUT'])
+@accept('application/json')
 @auth.login_required
 def update_task(task_id):
     task = filter(lambda t: t['id'] == task_id, tasks)
@@ -120,9 +125,9 @@ def update_task(task_id):
         abort(404)
     if not request.json:
         abort(400)
-    if 'title' in request.json and type(request.json['title']) != unicode:
+    if 'title' in request.json and not isinstance(request.json['title'], str):
         abort(400)
-    if 'description' in request.json and type(request.json['description']) is not unicode:
+    if 'description' in request.json and not isinstance(request.json['description'], str):
         abort(400)
     if 'done' in request.json and type(request.json['done']) is not bool:
         abort(400)
@@ -140,6 +145,7 @@ curl -u nikita:kedrun -i -H "Content-Type: application/json" -X DELETE  http://l
 
 
 @app.route('/api/margin/production/<int:task_id>', methods=['DELETE'])
+@accept('application/json')
 @auth.login_required
 def delete_task(task_id):
     task = filter(lambda t: t['id'] == task_id, tasks)
