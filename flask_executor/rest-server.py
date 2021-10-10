@@ -1,27 +1,40 @@
 #!flask/bin/python
 from flask import Flask, jsonify, abort, request, make_response, url_for
-from flask_httpauth import HTTPBasicAuth
 from flask_accept import accept
+from flask_executor import app
+import pandas as pd
+from .models_db import registry
+from sqlalchemy import select, and_
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+import bcrypt
 
-app = Flask(__name__, static_url_path="")
-auth = HTTPBasicAuth()
+
+jwt = JWTManager(app)
+
+@app.route("/api/margin/production/login", methods=['POST'])
+@accept('application/json')
+def login():
+    # password = '2203'
+    # hashAndSalt = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+    username = request.json.get("username")
+    password = request.json.get("password")
+    db = registry.dict_registry['users']
+    SQL_QUERY = select(db.columns['username'],db.columns['password']).where(db.columns['username'] == 'nikioioio')
+    username_pass_from_db = registry.engine.execute(SQL_QUERY).fetchall()
+    username_from_db = username_pass_from_db[0][0]
+    password_from_db = username_pass_from_db[0][1]
+    print(password.encode('utf8'))
+    valid = bcrypt.checkpw(password.encode('utf8'), str.encode(password_from_db))
+    if username!=username_from_db or valid==False:
+        return jsonify({"msg": "Bad username or password"}), 401
+    access_token = create_access_token(username)
+    return jsonify(access_token=access_token)
+
+
 """
 Функция принимает имя пользователя и должна искать пароль и сравнивать его с тем что пришло из req
 username: параметр
 """
-
-
-@auth.get_password
-def get_password(username):
-    if username == 'nikita':
-        return 'kedrun'
-    return None
-
-
-@auth.error_handler
-def unauthorized():
-    return make_response(jsonify({'error': 'Unauthorized access'}), 403)
-    # return 403 instead of 401 to prevent browsers from displaying the default auth dialog
 
 
 @app.errorhandler(400)
@@ -58,14 +71,23 @@ def make_public_task(task):
 """
 Функция принимает...
 Возвращает .....
-curl -u nikita:kedrun -i -H -X GET  http://localhost:5000/api/margin/production
+curl --location --request GET 'http://localhost:5000/api/margin/production' \
+--header 'Accept: application/json' \
+--header 'Authorization: Bearer ...' \
+--data-raw ''
 """
 
 
 @app.route('/api/margin/production', methods=['GET'])
 @accept('application/json')
-@auth.login_required
+@jwt_required()
 def get_tasks():
+    SQL_QUERY = select(registry.dict_registry['table_name'])
+    df = registry.getDataFrame(sql = SQL_QUERY, columns = ['id', 'date', 'value'] )
+    print(df)
+
+
+
     return jsonify({'tasks': make_public_task(tasks)})
 
 
@@ -76,9 +98,9 @@ curl -u nikita:kedrun -i -H -X GET  http://localhost:5000/api/margin/production/
 """
 
 
-@app.route('/api/margin/production/<int:task_id>/', methods=['GET'])
+@app.route('/api/margin/production/<int:month>/', methods=['GET'])
 @accept('application/json')
-@auth.login_required
+@jwt_required()
 def get_task(task_id):
     task = list(filter(lambda t: t['id'] == task_id, tasks))
     if len(task) == 0:
@@ -95,7 +117,7 @@ curl -u nikita:kedrun -i -H "Content-Type: application/json" -X POST -d '....' h
 
 @app.route('/api/margin/production', methods=['POST'])
 @accept('application/json')
-@auth.login_required
+@jwt_required()
 def create_task():
     if not request.json or not 'title' in request.json:
         abort(400)
@@ -118,7 +140,7 @@ curl -u nikita:kedrun -i -H "Content-Type: application/json" -X PUT -d '....' ht
 
 @app.route('/api/margin/production/<int:task_id>', methods=['PUT'])
 @accept('application/json')
-@auth.login_required
+@jwt_required()
 def update_task(task_id):
     task = filter(lambda t: t['id'] == task_id, tasks)
     if len(task) == 0:
@@ -146,7 +168,7 @@ curl -u nikita:kedrun -i -H "Content-Type: application/json" -X DELETE  http://l
 
 @app.route('/api/margin/production/<int:task_id>', methods=['DELETE'])
 @accept('application/json')
-@auth.login_required
+@jwt_required()
 def delete_task(task_id):
     task = filter(lambda t: t['id'] == task_id, tasks)
     if len(task) == 0:

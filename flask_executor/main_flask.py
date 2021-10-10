@@ -1,12 +1,10 @@
 from flask import Flask,request
 import json
 import pandas as pd
-from settings import PASS
 
 
 app = Flask(__name__)
 app.config.from_pyfile('../settings.py')
-
 
 
 
