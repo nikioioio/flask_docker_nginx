@@ -4,9 +4,11 @@ from flask_accept import accept
 from flask_executor import app
 import pandas as pd
 from .models_db import registry
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, insert, func, extract
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 import bcrypt
+import datetime
+
 
 
 jwt = JWTManager(app)
@@ -19,14 +21,13 @@ def login():
     username = request.json.get("username")
     password = request.json.get("password")
     db = registry.dict_registry['users']
-    SQL_QUERY = select(db.columns['username'],db.columns['password']).where(db.columns['username'] == 'nikioioio')
+    SQL_QUERY = select(db.columns['username'],db.columns['password']).where(db.columns['username'] == username)
     username_pass_from_db = registry.engine.execute(SQL_QUERY).fetchall()
     username_from_db = username_pass_from_db[0][0]
     password_from_db = username_pass_from_db[0][1]
-    print(password.encode('utf8'))
     valid = bcrypt.checkpw(password.encode('utf8'), str.encode(password_from_db))
     if username!=username_from_db or valid==False:
-        return jsonify({"msg": "Bad username or password"}), 401
+        return jsonify({"production": "Bad username or password"}), 401
     access_token = create_access_token(username)
     return jsonify(access_token=access_token)
 
@@ -35,16 +36,19 @@ def login():
 Функция принимает имя пользователя и должна искать пароль и сравнивать его с тем что пришло из req
 username: параметр
 """
+@jwt.expired_token_loader
+def my_expired_token_callback():
+    return jsonify({'production': 'The token has expired'}), 401
 
 
 @app.errorhandler(400)
 def not_found(error):
-    return make_response(jsonify({'error': 'Bad request'}), 400)
+    return make_response(jsonify({'production': 'Bad request'}), 400)
 
 
 @app.errorhandler(404)
 def not_found(error):
-    return make_response(jsonify({'error': 'Not found'}), 404)
+    return make_response(jsonify({'production': 'Not found'}), 404)
 
 
 tasks = [
@@ -82,13 +86,13 @@ curl --location --request GET 'http://localhost:5000/api/margin/production' \
 @accept('application/json')
 @jwt_required()
 def get_tasks():
-    SQL_QUERY = select(registry.dict_registry['table_name'])
-    df = registry.getDataFrame(sql = SQL_QUERY, columns = ['id', 'date', 'value'] )
-    print(df)
+    columns = ['id', 'date', 'value']
+    db = registry.dict_registry['data']
+    SQL_QUERY = select(db)
+    jsonUpload = registry.prepareJson(SQL_QUERY=SQL_QUERY, columnsDf=columns, colsPivot=['date'], indexPivot=['id'],
+                         valuesPivot=['value'])
 
-
-
-    return jsonify({'tasks': make_public_task(tasks)})
+    return jsonify({'production': jsonUpload})
 
 
 """
@@ -98,14 +102,18 @@ curl -u nikita:kedrun -i -H -X GET  http://localhost:5000/api/margin/production/
 """
 
 
-@app.route('/api/margin/production/<int:month>/', methods=['GET'])
+@app.route('/api/margin/production/<int:year>/', methods=['GET'])
 @accept('application/json')
 @jwt_required()
-def get_task(task_id):
-    task = list(filter(lambda t: t['id'] == task_id, tasks))
-    if len(task) == 0:
-        abort(404)
-    return jsonify({'task': make_public_task(task)})
+def get_task(year):
+    columns = ['id', 'date', 'value']
+    db = registry.dict_registry['data']
+    SQL_QUERY = select(db).where(extract('year', db.columns['date']) == year)
+    jsonUpload = registry.prepareJson(SQL_QUERY=SQL_QUERY, columnsDf=columns, colsPivot=['date'], indexPivot=['id'],
+                                      valuesPivot=['value'])
+
+
+    return jsonify({'production': jsonUpload}), 200
 
 
 """
@@ -119,16 +127,15 @@ curl -u nikita:kedrun -i -H "Content-Type: application/json" -X POST -d '....' h
 @accept('application/json')
 @jwt_required()
 def create_task():
-    if not request.json or not 'title' in request.json:
+    if not request.json:
         abort(400)
-    task = {
-        'id': tasks[-1]['id'] + 1,
-        'title': request.json['title'],
-        'description': request.json.get('description', ""),
-        'done': False
-    }
-    tasks.append(task)
-    return jsonify({'task': make_public_task(task)}), 201
+
+    db = registry.dict_registry['data']
+    json_body = [request.json[x] for x in request.json]
+    SQL_QUERY = insert(db).returning(db.columns['id']).values(json_body)
+    response = registry.engine.execute(SQL_QUERY).fetchall()
+
+    return jsonify({'added_id': [x[0] for x in response]}), 201
 
 
 """

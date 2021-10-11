@@ -1,5 +1,6 @@
 from sqlalchemy import Table, MetaData, create_engine
 import pandas as pd
+import json
 
 
 class TableRegistry(object):
@@ -19,6 +20,17 @@ class TableRegistry(object):
     def getDataFrame(self, sql: str, columns: list) -> pd.DataFrame:
         result_proxy = self.engine.execute(sql)
         return pd.DataFrame(result_proxy.fetchall(), columns=columns)
+
+    def prepareJson(self, SQL_QUERY, columnsDf, colsPivot, indexPivot, valuesPivot):
+        df = self.getDataFrame(sql=SQL_QUERY, columns=columnsDf)
+        df['date'] = df['date'].astype('str')
+        df = df.pivot_table(columns=colsPivot, index=indexPivot, aggfunc='sum', values=valuesPivot).reset_index()
+        return json.loads(df.to_json(orient="split"))
+
+
+
+
+
 
 
 
