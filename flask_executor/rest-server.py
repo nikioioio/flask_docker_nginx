@@ -1,13 +1,20 @@
 #!flask/bin/python
+import json
+
 from flask import Flask, jsonify, abort, request, make_response, url_for
 from flask_accept import accept
+from .modules.service import get_date_arrs_for_filter
 from flask_executor import app
 import pandas as pd
 from .models_db import registry
-from sqlalchemy import select, and_, insert, func, extract
+from sqlalchemy import select, and_, insert, func, extract, delete
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 import bcrypt
 import datetime
+from os import environ,path
+
+
+
 
 
 
@@ -18,17 +25,17 @@ jwt = JWTManager(app)
 def login():
     # password = '2203'
     # hashAndSalt = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-    username = request.json.get("username")
-    password = request.json.get("password")
-    db = registry.dict_registry['users']
-    SQL_QUERY = select(db.columns['username'],db.columns['password']).where(db.columns['username'] == username)
-    username_pass_from_db = registry.engine.execute(SQL_QUERY).fetchall()
-    username_from_db = username_pass_from_db[0][0]
-    password_from_db = username_pass_from_db[0][1]
-    valid = bcrypt.checkpw(password.encode('utf8'), str.encode(password_from_db))
-    if username!=username_from_db or valid==False:
-        return jsonify({"production": "Bad username or password"}), 401
-    access_token = create_access_token(username)
+    # username = request.json.get("username")
+    # password = request.json.get("password")
+    # db = registry.dict_registry['users']
+    # SQL_QUERY = select(db.columns['username'],db.columns['password']).where(db.columns['username'] == username)
+    # username_pass_from_db = registry.engine.execute(SQL_QUERY).fetchall()
+    # username_from_db = username_pass_from_db[0][0]
+    # password_from_db = username_pass_from_db[0][1]
+    # valid = bcrypt.checkpw(password.encode('utf8'), str.encode(password_from_db))
+    # if username!=username_from_db or valid==False:
+    #     return jsonify({"production": "Bad username or password"}), 401
+    access_token = create_access_token(environ.get('PG_USERNAME'))
     return jsonify(access_token=access_token)
 
 
@@ -41,6 +48,14 @@ def my_expired_token_callback():
     return jsonify({'production': 'The token has expired'}), 401
 
 
+@jwt.user_lookup_error_loader
+def customized_error_handler(error):
+    return jsonify({
+                       'message': error.description,
+                       'code': error.status_code
+                   }), error.status_code
+
+
 @app.errorhandler(400)
 def not_found(error):
     return make_response(jsonify({'production': 'Bad request'}), 400)
@@ -51,26 +66,6 @@ def not_found(error):
     return make_response(jsonify({'production': 'Not found'}), 404)
 
 
-tasks = [
-    {
-        'id': 1,
-        'title': u'Buy groceries',
-        'description': u'Milk, Cheese, Pizza, Fruit, Tylenol',
-        'done': False
-    },
-    {
-        'id': 2,
-        'title': u'Learn Python',
-        'description': u'Need to find a good Python tutorial on the web',
-        'done': False
-    }
-]
-
-
-def make_public_task(task):
-    d = dict((x['id'], x) for x in task)
-    return d
-
 
 """
 Функция принимает...
@@ -80,109 +75,138 @@ curl --location --request GET 'http://localhost:5000/api/margin/production' \
 --header 'Authorization: Bearer ...' \
 --data-raw ''
 """
-
-
 @app.route('/api/margin/production', methods=['GET'])
 @accept('application/json')
 @jwt_required()
 def get_tasks():
-    columns = ['id', 'date', 'value']
-    db = registry.dict_registry['data']
+    columns = ['id', 'vendor_code', 'prod_name', 'date', 'value']
+    db = registry.dict_registry['margin_input_instock_balance']
     SQL_QUERY = select(db)
-    jsonUpload = registry.prepareJson(SQL_QUERY=SQL_QUERY, columnsDf=columns, colsPivot=['date'], indexPivot=['id'],
+    jsonUpload = registry.prepareJson(SQL_QUERY=SQL_QUERY, columnsDf=columns, colsPivot=['date'], indexPivot=['id','vendor_code','prod_name'],
                          valuesPivot=['value'])
-
     return jsonify({'production': jsonUpload})
 
 
-"""
-Функция принимает...
-Возвращает .....
-curl -u nikita:kedrun -i -H -X GET  http://localhost:5000/api/margin/production/2
-"""
 
-
-@app.route('/api/margin/production/<int:year>/', methods=['GET'])
+"""
+curl --location --request GET 'http://localhost:5000/api/margin/production/2021' \
+--header 'Accept: application/json' \
+--header 'Authorization: Bearer ''''''
+curl --location --request GET 'http://localhost:5000/api/margin/production/2021' \
+--header 'Accept: application/json' \
+--header 'Authorization: Bearer ''''''
+Входной параметр <int:year> это год за который ходим получить данные 
+На выходе {"production":{"columns":[],"data":[],"index":[]}}
+"""
+@app.route('/api/margin/production/<int:year>', methods=['GET'])
 @accept('application/json')
 @jwt_required()
 def get_task(year):
-    columns = ['id', 'date', 'value']
-    db = registry.dict_registry['data']
-    SQL_QUERY = select(db).where(extract('year', db.columns['date']) == year)
+    db_clean = registry.dict_registry['margin_input_instock_balance']
+    columns = [x.key for x in db_clean.columns]
+    # Отдаем json для дальнейшей работы
+    SQL_QUERY = select(db_clean).where(extract('year', db_clean.columns['date']) == year)
     jsonUpload = registry.prepareJson(SQL_QUERY=SQL_QUERY, columnsDf=columns, colsPivot=['date'], indexPivot=['id'],
                                       valuesPivot=['value'])
-
-
     return jsonify({'production': jsonUpload}), 200
 
 
 """
-Функция принимает...
-Возвращает .....
-curl -u nikita:kedrun -i -H "Content-Type: application/json" -X POST -d '....' http://localhost:5000/api/margin/production
+curl --location --request POST 'http://localhost:5000/api/margin/production' \
+--header 'Accept: application/json' \
+--header 'Authorization: Bearer... \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "Obj":{"vendor_code":"test", "prod_name":"test","date":"2021.06.22","value": 5848481.1}
+    }'
+На выходе {"production":[id,id2...]} , где id это возврат из бд id о подтверждений записи.
 """
-
-
 @app.route('/api/margin/production', methods=['POST'])
 @accept('application/json')
 @jwt_required()
 def create_task():
+
     if not request.json:
         abort(400)
 
-    db = registry.dict_registry['data']
+    db = registry.dict_registry['margin_input_instock_balance_d']
     json_body = [request.json[x] for x in request.json]
     SQL_QUERY = insert(db).returning(db.columns['id']).values(json_body)
-    response = registry.engine.execute(SQL_QUERY).fetchall()
+    response = registry.get_session().execute(SQL_QUERY).fetchall()
 
-    return jsonify({'added_id': [x[0] for x in response]}), 201
+    return jsonify({'production': [x[0] for x in response]}), 201
 
 
 """
-Функция принимает...
-Возвращает .....
-curl -u nikita:kedrun -i -H "Content-Type: application/json" -X PUT -d '....' http://localhost:5000/api/margin/production/2
+curl --location --request PUT 'http://localhost:5000/api/margin/production/3' \
+--header 'Accept: application/json' \
+--header 'Authorization: Bearer '
+Входной параметр <int:offset_replace> смещение по месяцам(к примеру 3 обозначает что под замену пойдет данные которые начниаются с -3 месяцев от текущего момента)
+На выходе {"production":[id,id2...]} , где id это возврат из бд id о подтверждений записи.
 """
-
-
-@app.route('/api/margin/production/<int:task_id>', methods=['PUT'])
+@app.route('/api/margin/production/<int:offset_replace>', methods=['PUT'])
 @accept('application/json')
 @jwt_required()
-def update_task(task_id):
-    task = filter(lambda t: t['id'] == task_id, tasks)
-    if len(task) == 0:
-        abort(404)
-    if not request.json:
-        abort(400)
-    if 'title' in request.json and not isinstance(request.json['title'], str):
-        abort(400)
-    if 'description' in request.json and not isinstance(request.json['description'], str):
-        abort(400)
-    if 'done' in request.json and type(request.json['done']) is not bool:
-        abort(400)
-    task[0]['title'] = request.json.get('title', task[0]['title'])
-    task[0]['description'] = request.json.get('description', task[0]['description'])
-    task[0]['done'] = request.json.get('done', task[0]['done'])
-    return jsonify({'task': make_public_task(task[0])})
+def update_task(offset_replace):
+    db_dirt = registry.dict_registry['margin_input_instock_balance_d']
+    db_clean = registry.dict_registry['margin_input_instock_balance']
+    columns = [x.key for x in db_dirt.columns]
+
+
+    # выбираем из грязной таблицы данные с глубиной REWRITING_DEPTH
+    filetr_date_arr = get_date_arrs_for_filter(offset_replace)
+    SQL_QUERY = select(db_dirt).where(and_(extract('year', db_dirt.columns['date']).in_(filetr_date_arr['years']),
+                                           extract('month', db_dirt.columns['date']).in_(filetr_date_arr['months'])
+                                           )
+                                      )
+
+    # Рассчитываем бизнес логику
+    df = registry.getDataFrame(SQL_QUERY, columns).drop('id', axis=1)
+    df['date'] = df['date'].astype('str')
+
+    # /////////////////////////////////////////
+
+    # Постобработка
+    json_upl = json.loads(df.to_json(orient="index"))
+    jsonUpload = [json_upl[x] for x in json_upl]
+
+    # удалить записи из чистой бд которые соответствуют filetr_date_arr(для заменты значений)
+    SQL_QUERY = delete(db_clean).where(and_(extract('year', db_clean.columns['date']).in_(filetr_date_arr['years']),
+                                            extract('month', db_clean.columns['date']).in_(
+                                                filetr_date_arr['months'])
+                                            )
+                                       )
+
+    registry.get_session().execute(SQL_QUERY)
+    SQL_QUERY = insert(db_clean).returning(db_clean.columns['id']).values(jsonUpload)
+    response = registry.get_session().execute(SQL_QUERY).fetchall()
+
+    return jsonify({'production': [x[0] for x in response]}), 201
 
 
 """
-Функция принимает...
-Возвращает .....
-curl -u nikita:kedrun -i -H "Content-Type: application/json" -X DELETE  http://localhost:5000/api/margin/production/2
+curl --location --request DELETE 'http://localhost:5000/api/margin/production/8' \
+--header 'Accept: application/json' \
+--header 'Authorization: Bearer ...'
+Входной параметр <int:offset_replace> смещение по месяцам(к примеру 3 обозначает что под замену пойдет данные которые начниаются с -3 месяцев от текущего момента)
+На выходе {"production":deleted} , где id это возврат из бд id о подтверждений записи.
 """
-
-
-@app.route('/api/margin/production/<int:task_id>', methods=['DELETE'])
+@app.route('/api/margin/production/<int:offset_replace>', methods=['DELETE'])
 @accept('application/json')
 @jwt_required()
-def delete_task(task_id):
-    task = filter(lambda t: t['id'] == task_id, tasks)
-    if len(task) == 0:
-        abort(404)
-    tasks.remove(task[0])
-    return jsonify({'result': True})
+def delete_task(offset_replace):
+    db_clean = registry.dict_registry['margin_input_instock_balance']
+    filetr_date_arr = get_date_arrs_for_filter(offset_replace)
+    # удалить записи из чистой бд которые соответствуют filetr_date_arr(для заменты значений)
+    SQL_QUERY = delete(db_clean).where(and_(extract('year', db_clean.columns['date']).in_(filetr_date_arr['years']),
+                                            extract('month', db_clean.columns['date']).in_(
+                                                filetr_date_arr['months'])
+                                            )
+                                       )
 
+    registry.get_session().execute(SQL_QUERY)
+
+    return jsonify({'production':'deleted'}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)

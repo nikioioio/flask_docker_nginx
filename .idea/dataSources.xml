@@ -8,11 +8,11 @@
       <jdbc-url>jdbc:sqlite:identifier.sqlite</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
-    <data-source source="LOCAL" name="postgres@localhost" uuid="214aba26-d4b6-4831-80b5-3a0fce9cf314">
-      <driver-ref>postgresql</driver-ref>
+    <data-source source="LOCAL" name="postgres@10.241.94.2" uuid="a5f03426-447e-45dd-bb07-1b5535fdc81c">
+      <driver-ref>greenplum</driver-ref>
       <synchronize>true</synchronize>
       <jdbc-driver>org.postgresql.Driver</jdbc-driver>
-      <jdbc-url>jdbc:postgresql://localhost:5432/habrdb</jdbc-url>
+      <jdbc-url>jdbc:postgresql://10.241.94.2:5432/postgres</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
   </component>
